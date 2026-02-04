@@ -3,13 +3,32 @@
 ## Run locally
 
 1. Install Node.js 20+ and pnpm.
-2. Install dependencies:
+2. Copy the example env file and adjust if needed:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Install dependencies:
 
    ```bash
    pnpm install
    ```
 
-3. Start the development servers (when the apps are added):
+4. Start Postgres + Redis:
+
+   ```bash
+   pnpm db:up
+   ```
+
+5. Run Prisma migrations and seed data:
+
+   ```bash
+   pnpm db:migrate
+   pnpm db:seed
+   ```
+
+6. Start the development servers:
 
    ```bash
    pnpm dev

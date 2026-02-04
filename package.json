@@ -1,0 +1,29 @@
+{
+  "name": "knights-and-kings",
+  "private": true,
+  "packageManager": "pnpm@9.12.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "db:up": "docker compose up -d",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^9.9.0",
+    "prisma": "^5.19.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

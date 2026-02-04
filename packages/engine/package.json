@@ -1,0 +1,11 @@
+{
+  "name": "@knights/engine",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "echo 'no tests'"
+  }
+}

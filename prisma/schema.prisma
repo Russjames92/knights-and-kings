@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum InstitutionType {
+  Pawn
+  Knight
+  Rook
+  Bishop
+  Queen
+  King
+}
+
+enum CardRarity {
+  Common
+  Uncommon
+  Rare
+  UltraRare
+  Legendary
+}
+
+model User {
+  id           String        @id @default(uuid())
+  externalId   String        @unique
+  displayName  String?
+  realms       Realm[]
+  cardInstances CardInstance[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Region {
+  id        String  @id @default(uuid())
+  name      String
+  realms    Realm[]
+  createdAt DateTime @default(now())
+
+  @@unique([name])
+}
+
+model Realm {
+  id           String             @id @default(uuid())
+  name         String
+  originLat    Float
+  originLng    Float
+  wealth       Int                @default(0)
+  lastTickAt   DateTime?
+  userId       String
+  regionId     String
+  user         User               @relation(fields: [userId], references: [id])
+  region       Region             @relation(fields: [regionId], references: [id])
+  institutionSlots InstitutionSlot[]
+  cardInstances CardInstance[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model InstitutionSlot {
+  id              String           @id @default(uuid())
+  realmId         String
+  type            InstitutionType
+  establishedAt   DateTime         @default(now())
+  installedCardId String?          @unique
+  realm           Realm            @relation(fields: [realmId], references: [id])
+  installedCard   CardInstance?    @relation("InstalledCard", fields: [installedCardId], references: [id])
+
+  @@unique([realmId, type])
+}
+
+model CardTemplate {
+  id        String         @id @default(uuid())
+  name      String
+  type      InstitutionType
+  rarity    CardRarity
+  createdAt DateTime       @default(now())
+  instances CardInstance[]
+}
+
+model CardInstance {
+  id              String       @id @default(uuid())
+  templateId      String
+  ownerUserId     String
+  realmId         String?
+  installedSlotId String?      @unique
+  template        CardTemplate @relation(fields: [templateId], references: [id])
+  owner           User         @relation(fields: [ownerUserId], references: [id])
+  realm           Realm?       @relation(fields: [realmId], references: [id])
+  installedSlot   InstitutionSlot? @relation("InstalledCard", fields: [installedSlotId], references: [id])
+  createdAt       DateTime     @default(now())
+}
