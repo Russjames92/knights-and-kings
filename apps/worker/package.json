@@ -1,0 +1,21 @@
+{
+  "name": "@knights/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "echo 'no tests'"
+  },
+  "dependencies": {
+    "@knights/engine": "workspace:*",
+    "@prisma/client": "^5.19.1",
+    "bullmq": "^5.10.3",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
