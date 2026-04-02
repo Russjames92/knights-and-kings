@@ -48,7 +48,11 @@ export const GameEventTypeEnum = z.enum([
   'InterregnumStarted',
   'InterregnumEnded',
   'CardDrafted',
-  'BanquetHeld'
+  'BanquetHeld',
+  'HeirGenerated',
+  'HeirCrowned',
+  'LegacyEchoCreated',
+  'DynastyFounded'
 ]);
 export type GameEventType = z.infer<typeof GameEventTypeEnum>;
 
@@ -125,6 +129,22 @@ export type RaidResult = {
   success: boolean;
 };
 
+// --- Dynasty types ---
+
+export const HeirQualityEnum = z.enum(['promising', 'average', 'stinker']);
+export type HeirQuality = z.infer<typeof HeirQualityEnum>;
+
+export type HeirResult = {
+  quality: HeirQuality;
+  hiddenStats: CardStats;
+  revealedName: string;
+};
+
+export type LegacyEcho = {
+  pillarBiases: Partial<PillarValues>;
+  strength: number; // 0.1 - 0.3
+};
+
 // Request schemas
 export const DevLoginRequestSchema = z.object({
   externalId: z.string().min(1),
@@ -147,7 +167,13 @@ export const InstallInstitutionRequestSchema = z.object({
   cardInstanceId: z.string().uuid()
 });
 
+export const CreateDynastyRequestSchema = z.object({
+  realmId: z.string().uuid(),
+  name: z.string().min(1).max(100)
+});
+
 export type DevLoginRequest = z.infer<typeof DevLoginRequestSchema>;
 export type CreateRealmRequest = z.infer<typeof CreateRealmRequestSchema>;
 export type EstablishInstitutionRequest = z.infer<typeof EstablishInstitutionRequestSchema>;
 export type InstallInstitutionRequest = z.infer<typeof InstallInstitutionRequestSchema>;
+export type CreateDynastyRequest = z.infer<typeof CreateDynastyRequestSchema>;
