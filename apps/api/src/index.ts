@@ -30,12 +30,22 @@ const app = express();
 
 app.use(express.json());
 
-// CORS for localhost:3000
-app.use((_req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+// CORS — allow localhost in dev and Railway domains in production
+const allowedOrigins = [
+  'http://localhost:3000',
+  process.env.WEB_URL,
+  process.env.NEXTAUTH_URL,
+].filter(Boolean) as string[];
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  if (_req.method === 'OPTIONS') {
+  res.header('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
   return next();
@@ -1237,6 +1247,6 @@ app.get('/regions', async (_req, res) => {
 });
 
 const port = Number(process.env.PORT ?? 4000);
-app.listen(port, () => {
-  console.log(`API listening on ${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`API listening on 0.0.0.0:${port}`);
 });
