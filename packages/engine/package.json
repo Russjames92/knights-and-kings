@@ -8,6 +8,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@knights/shared": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "^4.1.2"
   }

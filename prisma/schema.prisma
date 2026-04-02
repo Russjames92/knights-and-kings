@@ -44,20 +44,33 @@ model Region {
 }
 
 model Realm {
-  id           String             @id @default(uuid())
-  name         String
-  originLat    Float
-  originLng    Float
-  wealth       Int                @default(0)
-  lastTickAt   DateTime?
-  userId       String
-  regionId     String
-  user         User               @relation(fields: [userId], references: [id])
-  region       Region             @relation(fields: [regionId], references: [id])
-  institutionSlots InstitutionSlot[]
-  cardInstances CardInstance[]
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  id                  String             @id @default(uuid())
+  name                String
+  originLat           Float
+  originLng           Float
+  wealth              Int                @default(0)
+  population          Int                @default(100)
+  lastTickAt          DateTime?
+  legitimacyScore     Float              @default(50)
+  pillarInstitutions  Float              @default(50)
+  pillarWealth        Float              @default(50)
+  pillarPopulation    Float              @default(50)
+  pillarCulture       Float              @default(50)
+  pillarFaith         Float              @default(50)
+  pillarVictory       Float              @default(0)
+  pillarTime          Float              @default(0)
+  isInterregnum       Boolean            @default(false)
+  interregnumStartedAt DateTime?
+  userId              String
+  regionId            String
+  user                User               @relation(fields: [userId], references: [id])
+  region              Region             @relation(fields: [regionId], references: [id])
+  institutionSlots    InstitutionSlot[]
+  cardInstances       CardInstance[]
+  reigns              Reign[]
+  gameEvents          GameEventLog[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 }
 
 model InstitutionSlot {
@@ -66,6 +79,9 @@ model InstitutionSlot {
   type            InstitutionType
   establishedAt   DateTime         @default(now())
   installedCardId String?          @unique
+  installedAt     DateTime?
+  termEndsAt      DateTime?
+  consecutiveTerms Int             @default(0)
   realm           Realm            @relation(fields: [realmId], references: [id])
   installedCard   CardInstance?    @relation("InstalledCard", fields: [installedCardId], references: [id])
 
@@ -73,12 +89,18 @@ model InstitutionSlot {
 }
 
 model CardTemplate {
-  id        String         @id @default(uuid())
-  name      String
-  type      InstitutionType
-  rarity    CardRarity
-  createdAt DateTime       @default(now())
-  instances CardInstance[]
+  id                String         @id @default(uuid())
+  name              String         @unique
+  type              InstitutionType
+  rarity            CardRarity
+  benefitPillars    Json?
+  downsidePillars   Json?
+  pressures         Json?
+  termModifier      Float          @default(0)
+  flavorText        String?
+  installCostOverride Int?
+  createdAt         DateTime       @default(now())
+  instances         CardInstance[]
 }
 
 model CardInstance {
@@ -91,4 +113,50 @@ model CardInstance {
   realm           Realm?       @relation(fields: [realmId], references: [id])
   installedSlot   InstitutionSlot? @relation("InstalledCard")
   createdAt       DateTime     @default(now())
+}
+
+model Reign {
+  id              String    @id @default(uuid())
+  realmId         String
+  kingCardId      String
+  queenCardId     String?
+  startedAt       DateTime  @default(now())
+  endsAt          DateTime
+  endedEarly      Boolean   @default(false)
+  endReason       String?
+  dynastyId       String?
+  realm           Realm     @relation(fields: [realmId], references: [id])
+  createdAt       DateTime  @default(now())
+}
+
+model RaidLog {
+  id                  String    @id @default(uuid())
+  attackerRealmId     String
+  defenderRealmId     String
+  lootGained          Int       @default(0)
+  attackerStabilityHit Float    @default(0)
+  defenderStabilityHit Float    @default(0)
+  success             Boolean   @default(false)
+  occurredAt          DateTime  @default(now())
+}
+
+model ObscurityCooldown {
+  id              String    @id @default(uuid())
+  cardInstanceId  String
+  regionId        String
+  cooldownUntil   DateTime
+  createdAt       DateTime  @default(now())
+
+  @@unique([cardInstanceId, regionId])
+}
+
+model GameEventLog {
+  id          String   @id @default(uuid())
+  realmId     String
+  eventType   String
+  data        Json     @default("{}")
+  occurredAt  DateTime @default(now())
+  realm       Realm    @relation(fields: [realmId], references: [id])
+
+  @@index([realmId, occurredAt])
 }
