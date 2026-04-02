@@ -1,5 +1,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
+import { jwtDecrypt } from 'jose';
+import { createHash } from 'crypto';
 import {
   CreateRealmRequestSchema,
   DevLoginRequestSchema,
@@ -27,7 +29,7 @@ app.use(express.json());
 // CORS for localhost:3000
 app.use((_req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, x-user-id');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (_req.method === 'OPTIONS') {
     return res.sendStatus(204);
@@ -59,11 +61,45 @@ app.post('/auth/dev-login', async (req, res) => {
 });
 
 // --- Auth middleware ---
+const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
+
+function deriveEncryptionKey(secret: string): Uint8Array {
+  // NextAuth v4 derives the encryption key using: SHA-256("NextAuth.js Generated Encryption Key" + secret)
+  // then takes the first 32 bytes
+  return createHash('sha256')
+    .update(`NextAuth.js Generated Encryption Key${secret}`)
+    .digest();
+}
+
+async function extractUserIdFromJwt(authHeader: string): Promise<string | null> {
+  if (!NEXTAUTH_SECRET) return null;
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const encryptionKey = deriveEncryptionKey(NEXTAUTH_SECRET);
+    const { payload } = await jwtDecrypt(token, encryptionKey);
+    return (payload.userId as string) ?? (payload.sub as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 app.use(async (req, res, next) => {
   if (req.path.startsWith('/auth')) return next();
 
-  const userId = req.header('x-user-id');
-  if (!userId) return res.status(401).json({ error: 'Missing x-user-id header' });
+  let userId: string | null = null;
+
+  // 1. Check Bearer token (NextAuth JWT)
+  const authHeader = req.header('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    userId = await extractUserIdFromJwt(authHeader);
+  }
+
+  // 2. Fall back to x-user-id header in development
+  if (!userId && process.env.NODE_ENV !== 'production') {
+    userId = req.header('x-user-id') ?? null;
+  }
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return res.status(401).json({ error: 'User not found' });

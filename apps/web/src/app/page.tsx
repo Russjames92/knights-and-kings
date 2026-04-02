@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { getMyRealms, createRealm, getRegions } from '../lib/api';
 import type { Realm, Region } from '../lib/api';
 import RealmMap from '../components/RealmMap';
+import { useAuth } from '../lib/useAuth';
 
 export default function DashboardPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [realms, setRealms] = useState<Realm[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,13 +19,13 @@ export default function DashboardPage() {
   const [placementLng, setPlacementLng] = useState<number | null>(null);
 
   useEffect(() => {
-    const userId = localStorage.getItem('userId');
-    if (!userId) {
+    if (authLoading) return;
+    if (!isAuthenticated) {
       window.location.href = '/login';
       return;
     }
     loadData();
-  }, []);
+  }, [isAuthenticated, authLoading]);
 
   async function loadData() {
     try {

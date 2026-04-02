@@ -1,17 +1,58 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-function getUserId(): string | null {
+function getDevUserId(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('userId');
 }
 
+let cachedToken: { token: string; expiresAt: number } | null = null;
+
+async function getNextAuthToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+
+  // Return cached token if still valid (with 60s buffer)
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
+    return cachedToken.token;
+  }
+
+  try {
+    const res = await fetch('/api/auth/token');
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.token) {
+      // Cache for 5 minutes
+      cachedToken = { token: data.token, expiresAt: Date.now() + 5 * 60_000 };
+      return data.token;
+    }
+  } catch {
+    // Ignore — fall through to dev auth
+  }
+  return null;
+}
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  // Try NextAuth JWT token first
+  const token = await getNextAuthToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+
+  // Fall back to dev-login userId from localStorage
+  const devUserId = getDevUserId();
+  if (devUserId) {
+    return { 'x-user-id': devUserId };
+  }
+
+  return {};
+}
+
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const userId = getUserId();
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(userId ? { 'x-user-id': userId } : {}),
+      ...authHeaders,
       ...options.headers
     }
   });
