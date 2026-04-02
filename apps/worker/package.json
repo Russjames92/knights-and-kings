@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@knights/engine": "workspace:*",
+    "@knights/shared": "workspace:*",
     "@prisma/client": "^5.19.1",
     "bullmq": "^5.10.3",
     "ioredis": "^5.4.1"

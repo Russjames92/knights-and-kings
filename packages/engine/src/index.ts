@@ -1,31 +1,34 @@
-export type RealmTickInput = {
-  realmId: string;
-  lastTickAt: Date | null;
-  wealth: number;
-};
+// Re-export all engine modules
+export { computeRealmTick, getTickWindow } from './tick.js';
+export {
+  computeLegitimacyTarget,
+  applyBalanceCap,
+  driftLegitimacy,
+  getPillarContributions,
+  getLegitimacyTier
+} from './legitimacy.js';
+export {
+  getDefaultTermDays,
+  computeTermEnd,
+  checkTermExpiry,
+  canReappoint,
+  checkObscurity
+} from './terms.js';
+export {
+  checkKingFall,
+  applyGovernmentCollapse,
+  computeInterregnumEffects,
+  isPeacefulTransfer
+} from './collapse.js';
+export {
+  getInstallCost,
+  computeCardEffects,
+  validateInstallation
+} from './cards.js';
+export {
+  computeRaidOutcome
+} from './raids.js';
 
-export type RealmTickResult = {
-  nextWealth: number;
-  notes: string[];
-};
-
-export function computeRealmTick(input: RealmTickInput, _now: Date): RealmTickResult {
-  const notes: string[] = [];
-  let nextWealth = input.wealth;
-
-  if (!input.lastTickAt) {
-    notes.push('initial tick');
-  }
-
-  const hourlyIncome = 10;
-  nextWealth += hourlyIncome;
-  notes.push(`wealth +${hourlyIncome}`);
-
-  return { nextWealth, notes };
-}
-
-export function getTickWindow(now: Date): Date {
-  const tick = new Date(now);
-  tick.setMinutes(0, 0, 0);
-  return tick;
-}
+// Keep legacy types for backwards compat with existing imports
+export type { RealmState as RealmTickInput } from '@knights/shared';
+export type { TickResult as RealmTickResult } from '@knights/shared';

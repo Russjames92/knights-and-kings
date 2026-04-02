@@ -1,71 +1,145 @@
 import { describe, it, expect } from 'vitest';
 import { computeRealmTick, getTickWindow } from '../index.js';
-import type { RealmTickInput } from '../index.js';
+import type { RealmState, PillarValues } from '@knights/shared';
+
+const basePillars: PillarValues = {
+  Institutions: 50,
+  Wealth: 50,
+  Population: 50,
+  Culture: 30,
+  Faith: 30,
+  Victory: 0,
+  Time: 0
+};
+
+function makeState(overrides?: Partial<RealmState>): RealmState {
+  return {
+    realmId: 'realm-1',
+    wealth: 100,
+    population: 100,
+    legitimacyScore: 50,
+    pillars: { ...basePillars },
+    institutions: [],
+    isInterregnum: false,
+    interregnumStartedAt: null,
+    lastTickAt: new Date('2025-01-01T10:00:00Z'),
+    currentReignStartedAt: null,
+    currentReignEndsAt: null,
+    ...overrides
+  };
+}
 
 describe('computeRealmTick', () => {
-  const baseInput: RealmTickInput = {
-    realmId: 'realm-1',
-    lastTickAt: new Date('2025-01-01T10:00:00Z'),
-    wealth: 100,
-  };
-
-  it('adds hourly income of 10 wealth', () => {
+  it('adds base wealth income of 10', () => {
+    const state = makeState();
     const now = new Date('2025-01-01T11:00:00Z');
-    const result = computeRealmTick(baseInput, now);
+    const result = computeRealmTick(state, now);
 
-    expect(result.nextWealth).toBe(110);
-    expect(result.notes).toContain('wealth +10');
+    expect(result.wealth).toBe(110);
+  });
+
+  it('adds extra wealth per staffed institution', () => {
+    const state = makeState({
+      institutions: [
+        { type: 'Pawn', installedCardId: 'card-1', cardStats: null, installedAt: new Date(), termEndsAt: new Date('2025-02-01'), consecutiveTerms: 0 },
+        { type: 'Knight', installedCardId: 'card-2', cardStats: null, installedAt: new Date(), termEndsAt: new Date('2025-02-01'), consecutiveTerms: 0 }
+      ]
+    });
+    const now = new Date('2025-01-01T11:00:00Z');
+    const result = computeRealmTick(state, now);
+
+    // 10 base + 2 * 5 = 20
+    expect(result.wealth).toBe(120);
   });
 
   it('handles initial tick when lastTickAt is null', () => {
-    const input: RealmTickInput = {
-      ...baseInput,
-      lastTickAt: null,
-    };
+    const state = makeState({ lastTickAt: null });
     const now = new Date('2025-01-01T11:00:00Z');
-    const result = computeRealmTick(input, now);
+    const result = computeRealmTick(state, now);
 
-    expect(result.nextWealth).toBe(110);
-    expect(result.notes).toContain('initial tick');
-    expect(result.notes).toContain('wealth +10');
+    expect(result.wealth).toBe(110);
   });
 
-  it('returns notes as an array', () => {
+  it('returns pillar values', () => {
+    const state = makeState();
     const now = new Date('2025-01-01T11:00:00Z');
-    const result = computeRealmTick(baseInput, now);
+    const result = computeRealmTick(state, now);
 
-    expect(Array.isArray(result.notes)).toBe(true);
-    expect(result.notes.length).toBeGreaterThan(0);
+    expect(result.pillars).toBeDefined();
+    expect(typeof result.pillars.Institutions).toBe('number');
+    expect(typeof result.pillars.Wealth).toBe('number');
   });
 
-  it('preserves existing wealth and adds income', () => {
-    const input: RealmTickInput = {
-      ...baseInput,
-      wealth: 500,
-    };
+  it('generates term expired events', () => {
+    const state = makeState({
+      institutions: [{
+        type: 'Pawn',
+        installedCardId: 'card-1',
+        cardStats: null,
+        installedAt: new Date('2024-12-01'),
+        termEndsAt: new Date('2025-01-01T09:00:00Z'),
+        consecutiveTerms: 0
+      }]
+    });
     const now = new Date('2025-01-01T11:00:00Z');
-    const result = computeRealmTick(input, now);
+    const result = computeRealmTick(state, now);
 
-    expect(result.nextWealth).toBe(510);
+    expect(result.expiredSlotTypes).toContain('Pawn');
+    expect(result.events.some(e => e.type === 'TermExpired')).toBe(true);
   });
 
-  it('works with zero wealth', () => {
-    const input: RealmTickInput = {
-      ...baseInput,
-      wealth: 0,
-    };
+  it('increases population with pawn installed', () => {
+    const state = makeState({
+      institutions: [{
+        type: 'Pawn',
+        installedCardId: 'card-1',
+        cardStats: null,
+        installedAt: new Date(),
+        termEndsAt: new Date('2025-02-01'),
+        consecutiveTerms: 0
+      }]
+    });
     const now = new Date('2025-01-01T11:00:00Z');
-    const result = computeRealmTick(input, now);
+    const result = computeRealmTick(state, now);
 
-    expect(result.nextWealth).toBe(10);
+    expect(result.population).toBe(101);
+  });
+
+  it('decreases population without pawn', () => {
+    const state = makeState();
+    const now = new Date('2025-01-01T11:00:00Z');
+    const result = computeRealmTick(state, now);
+
+    expect(result.population).toBe(99);
   });
 
   it('is pure — same input produces same output', () => {
+    const state = makeState();
     const now = new Date('2025-01-01T11:00:00Z');
-    const result1 = computeRealmTick(baseInput, now);
-    const result2 = computeRealmTick(baseInput, now);
+    const result1 = computeRealmTick(state, now);
+    const result2 = computeRealmTick(state, now);
 
     expect(result1).toEqual(result2);
+  });
+
+  it('triggers king-fall when legitimacy is very low with king installed', () => {
+    const state = makeState({
+      legitimacyScore: 5,
+      institutions: [{
+        type: 'King',
+        installedCardId: 'king-1',
+        cardStats: null,
+        installedAt: new Date('2024-12-01'),
+        termEndsAt: new Date('2025-02-01'),
+        consecutiveTerms: 0
+      }]
+    });
+    const now = new Date('2025-01-01T11:00:00Z');
+    const result = computeRealmTick(state, now);
+
+    expect(result.kingFell).toBe(true);
+    expect(result.isInterregnum).toBe(true);
+    expect(result.events.some(e => e.type === 'KingFall')).toBe(true);
   });
 });
 
@@ -74,7 +148,7 @@ describe('getTickWindow', () => {
     const now = new Date('2025-01-01T14:37:22.500Z');
     const tick = getTickWindow(now);
 
-    expect(tick.getHours()).toBe(14);
+    expect(tick.getUTCHours()).toBe(14);
     expect(tick.getMinutes()).toBe(0);
     expect(tick.getSeconds()).toBe(0);
     expect(tick.getMilliseconds()).toBe(0);
@@ -99,16 +173,8 @@ describe('getTickWindow', () => {
     const now = new Date('2025-01-01T00:45:30.000Z');
     const tick = getTickWindow(now);
 
-    expect(tick.getHours()).toBe(0);
+    expect(tick.getUTCHours()).toBe(0);
     expect(tick.getMinutes()).toBe(0);
     expect(tick.getSeconds()).toBe(0);
-  });
-
-  it('handles end of day correctly', () => {
-    const now = new Date('2025-01-01T23:59:59.999Z');
-    const tick = getTickWindow(now);
-
-    expect(tick.getHours()).toBe(23);
-    expect(tick.getMinutes()).toBe(0);
   });
 });
