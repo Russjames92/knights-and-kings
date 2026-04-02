@@ -28,6 +28,11 @@ export {
 export {
   computeRaidOutcome
 } from './raids.js';
+export {
+  generateHeir,
+  generateLegacyEcho,
+  applyLegacyEchoToCard
+} from './dynasty.js';
 
 // Keep legacy types for backwards compat with existing imports
 export type { RealmState as RealmTickInput } from '@knights/shared';

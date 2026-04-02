@@ -63,12 +63,14 @@ model Realm {
   interregnumStartedAt DateTime?
   userId              String
   regionId            String
+  dynastyId           String?
   user                User               @relation(fields: [userId], references: [id])
   region              Region             @relation(fields: [regionId], references: [id])
   institutionSlots    InstitutionSlot[]
   cardInstances       CardInstance[]
   reigns              Reign[]
   gameEvents          GameEventLog[]
+  dynasties           Dynasty[]
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 }
@@ -93,6 +95,7 @@ model CardTemplate {
   name              String         @unique
   type              InstitutionType
   rarity            CardRarity
+  isLegendary       Boolean        @default(false)
   benefitPillars    Json?
   downsidePillars   Json?
   pressures         Json?
@@ -126,6 +129,32 @@ model Reign {
   endReason       String?
   dynastyId       String?
   realm           Realm     @relation(fields: [realmId], references: [id])
+  dynasty         Dynasty?  @relation(fields: [dynastyId], references: [id])
+  createdAt       DateTime  @default(now())
+}
+
+model Dynasty {
+  id            String    @id @default(uuid())
+  realmId       String
+  name          String
+  foundedAt     DateTime  @default(now())
+  legacyEchoes  Json?
+  realm         Realm     @relation(fields: [realmId], references: [id])
+  reigns        Reign[]
+  heirs         Heir[]
+  createdAt     DateTime  @default(now())
+}
+
+model Heir {
+  id              String    @id @default(uuid())
+  dynastyId       String
+  name            String
+  quality         String
+  hiddenStats     Json
+  isRevealed      Boolean   @default(false)
+  isCrowned       Boolean   @default(false)
+  generatedFrom   String
+  dynasty         Dynasty   @relation(fields: [dynastyId], references: [id])
   createdAt       DateTime  @default(now())
 }
 

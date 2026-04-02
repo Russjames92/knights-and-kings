@@ -118,6 +118,30 @@ export async function getNearbyRealms(lat: number, lng: number, radiusKm = 500) 
   );
 }
 
+// --- Dynasty ---
+export async function createDynasty(realmId: string, name: string) {
+  return apiFetch<{ dynasty: Dynasty }>('/dynasties', {
+    method: 'POST',
+    body: JSON.stringify({ realmId, name })
+  });
+}
+
+export async function getRealmDynasty(realmId: string) {
+  return apiFetch<{ dynasty: Dynasty | null }>(`/realms/${realmId}/dynasty`);
+}
+
+export async function crownHeir(heirId: string) {
+  return apiFetch<{ heir: Heir; quality: string; revealedStats: Record<string, unknown>; cardInstance: CardInstance }>(`/heirs/${heirId}/crown`, {
+    method: 'POST'
+  });
+}
+
+export async function processTransfer(realmId: string) {
+  return apiFetch<{ heir: Heir | null; legacyEcho: Record<string, unknown> | null }>(`/realms/${realmId}/process-transfer`, {
+    method: 'POST'
+  });
+}
+
 // Types
 export interface Realm {
   id: string;
@@ -224,4 +248,43 @@ export interface RaidResultData {
   attackerStabilityHit: number;
   defenderStabilityHit: number;
   success: boolean;
+}
+
+export interface Dynasty {
+  id: string;
+  realmId: string;
+  name: string;
+  foundedAt: string;
+  legacyEchoes: LegacyEchoData[] | null;
+  heirs: Heir[];
+  reigns: ReignData[];
+  createdAt: string;
+}
+
+export interface Heir {
+  id: string;
+  dynastyId: string;
+  name: string;
+  quality: string | null; // null if not revealed
+  hiddenStats: Record<string, unknown> | null; // null if not revealed
+  isRevealed: boolean;
+  isCrowned: boolean;
+  generatedFrom: string;
+  createdAt: string;
+}
+
+export interface LegacyEchoData {
+  pillarBiases: Record<string, number>;
+  strength: number;
+}
+
+export interface ReignData {
+  id: string;
+  realmId: string;
+  kingCardId: string;
+  startedAt: string;
+  endsAt: string;
+  endedEarly: boolean;
+  endReason: string | null;
+  dynastyId: string | null;
 }

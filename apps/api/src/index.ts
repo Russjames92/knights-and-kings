@@ -2,12 +2,13 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import {
   CreateRealmRequestSchema,
+  CreateDynastyRequestSchema,
   DevLoginRequestSchema,
   EstablishInstitutionRequestSchema,
   InstallInstitutionRequestSchema,
   InstitutionTypeEnum
 } from '@knights/shared';
-import type { RealmState, InstitutionSlotState, CardStats, PillarValues } from '@knights/shared';
+import type { RealmState, InstitutionSlotState, CardStats, PillarValues, LegacyEcho } from '@knights/shared';
 import {
   getInstallCost,
   computeRaidOutcome,
@@ -16,7 +17,10 @@ import {
   getDefaultTermDays,
   computeTermEnd,
   canReappoint,
-  validateInstallation
+  validateInstallation,
+  generateHeir,
+  generateLegacyEcho,
+  applyLegacyEchoToCard
 } from '@knights/engine';
 
 const prisma = new PrismaClient();
@@ -400,12 +404,16 @@ app.post('/institutions/:type/install', async (req, res) => {
 
       // If installing a King, create a Reign record
       if (type === 'King') {
+        // Check for active dynasty
+        const dynasty = await tx.dynasty.findFirst({ where: { realmId } });
+
         await tx.reign.create({
           data: {
             realmId,
             kingCardId: cardInstance.id,
             startedAt: now,
-            endsAt: termEnd
+            endsAt: termEnd,
+            dynastyId: dynasty?.id ?? null
           }
         });
 
@@ -808,6 +816,380 @@ app.get('/raids/log', async (req, res) => {
   });
 
   return res.json({ raids });
+});
+
+// --- Peaceful Transfer / Heir Generation ---
+app.post('/realms/:id/process-transfer', async (req, res) => {
+  const user = res.locals.user as { id: string };
+  const realmId = req.params.id;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const realm = await tx.realm.findFirst({
+        where: { id: realmId, userId: user.id },
+        include: {
+          ...realmInclude,
+          dynasties: true
+        }
+      });
+      if (!realm) throw new Error('Realm not found');
+
+      // Find the most recent reign
+      const lastReign = await tx.reign.findFirst({
+        where: { realmId },
+        orderBy: { startedAt: 'desc' }
+      });
+      if (!lastReign) throw new Error('No reign found');
+
+      // Check if king's term ended (peaceful transfer)
+      const kingSlot = realm.institutionSlots.find(s => s.type === 'King');
+      if (!kingSlot || !kingSlot.installedCardId) throw new Error('No king installed');
+      if (!kingSlot.termEndsAt || kingSlot.termEndsAt > new Date()) {
+        throw new Error('King term has not ended yet');
+      }
+
+      // Get the king's card template to check isLegendary
+      const kingCard = await tx.cardInstance.findUnique({
+        where: { id: kingSlot.installedCardId },
+        include: { template: true }
+      });
+      if (!kingCard) throw new Error('King card not found');
+
+      const dynasty = realm.dynasties[0] ?? null;
+      const isLegendary = kingCard.template.isLegendary;
+      const reignStability = realm.legitimacyScore;
+
+      const now = new Date();
+      let heirRecord = null;
+      let legacyEcho = null;
+
+      if (dynasty) {
+        if (isLegendary) {
+          // Legendary kings don't produce heirs but may leave legacy echoes
+          const cardStats: CardStats = {
+            benefitPillars: (kingCard.template.benefitPillars as Partial<PillarValues>) ?? {},
+            downsidePillars: (kingCard.template.downsidePillars as Partial<PillarValues>) ?? {},
+            pressures: (kingCard.template.pressures as Partial<PillarValues>) ?? {},
+            installCost: kingCard.template.installCostOverride ?? getInstallCost(kingCard.template.rarity as 'Common' | 'Uncommon' | 'Rare' | 'UltraRare' | 'Legendary'),
+            termModifier: kingCard.template.termModifier
+          };
+
+          legacyEcho = generateLegacyEcho(cardStats);
+          const existingEchoes = (dynasty.legacyEchoes as LegacyEcho[] | null) ?? [];
+          await tx.dynasty.update({
+            where: { id: dynasty.id },
+            data: { legacyEchoes: [...existingEchoes, legacyEcho] }
+          });
+
+          await tx.gameEventLog.create({
+            data: {
+              realmId,
+              eventType: 'LegacyEchoCreated',
+              data: { dynastyId: dynasty.id, kingName: kingCard.template.name },
+              occurredAt: now
+            }
+          });
+        } else {
+          // Normal king: generate heir
+          const heirResult = generateHeir(reignStability, isLegendary);
+          if (heirResult) {
+            // Apply legacy echoes to heir's stats if any
+            const existingEchoes = (dynasty.legacyEchoes as LegacyEcho[] | null) ?? [];
+            const modifiedStats = existingEchoes.length > 0
+              ? applyLegacyEchoToCard(heirResult.hiddenStats, existingEchoes)
+              : heirResult.hiddenStats;
+
+            heirRecord = await tx.heir.create({
+              data: {
+                dynastyId: dynasty.id,
+                name: heirResult.revealedName,
+                quality: heirResult.quality,
+                hiddenStats: modifiedStats,
+                generatedFrom: lastReign.id
+              }
+            });
+
+            await tx.gameEventLog.create({
+              data: {
+                realmId,
+                eventType: 'HeirGenerated',
+                data: { heirId: heirRecord.id, heirName: heirResult.revealedName, dynastyId: dynasty.id },
+                occurredAt: now
+              }
+            });
+          }
+        }
+      }
+
+      // Mark the reign as ended
+      await tx.reign.update({
+        where: { id: lastReign.id },
+        data: { endedEarly: false, endReason: 'peaceful_transfer' }
+      });
+
+      // Vacate the King slot
+      await tx.institutionSlot.update({
+        where: { realmId_type: { realmId, type: 'King' } },
+        data: {
+          installedCardId: null,
+          installedAt: null,
+          termEndsAt: null,
+          consecutiveTerms: 0
+        }
+      });
+
+      await tx.cardInstance.update({
+        where: { id: kingSlot.installedCardId },
+        data: { realmId: null }
+      });
+
+      await tx.realm.update({
+        where: { id: realmId },
+        data: { isInterregnum: true, interregnumStartedAt: now }
+      });
+
+      await tx.gameEventLog.create({
+        data: {
+          realmId,
+          eventType: 'PeacefulTransfer',
+          data: { kingCardId: kingSlot.installedCardId },
+          occurredAt: now
+        }
+      });
+
+      return { heir: heirRecord, legacyEcho };
+    });
+
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(400).json({ error: message });
+  }
+});
+
+// --- Dynasty endpoints ---
+app.post('/dynasties', async (req, res) => {
+  const parsed = CreateDynastyRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const user = res.locals.user as { id: string };
+  const { realmId, name } = parsed.data;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const realm = await tx.realm.findFirst({ where: { id: realmId, userId: user.id } });
+      if (!realm) throw new Error('Realm not found');
+
+      // Only one active dynasty per realm
+      const existing = await tx.dynasty.findFirst({ where: { realmId } });
+      if (existing) throw new Error('Realm already has an active dynasty');
+
+      const dynasty = await tx.dynasty.create({
+        data: { realmId, name }
+      });
+
+      await tx.realm.update({
+        where: { id: realmId },
+        data: { dynastyId: dynasty.id }
+      });
+
+      await tx.gameEventLog.create({
+        data: {
+          realmId,
+          eventType: 'DynastyFounded',
+          data: { dynastyId: dynasty.id, dynastyName: name },
+          occurredAt: new Date()
+        }
+      });
+
+      return dynasty;
+    });
+
+    return res.status(201).json({ dynasty: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.get('/realms/:id/dynasty', async (req, res) => {
+  const user = res.locals.user as { id: string };
+  const realm = await prisma.realm.findFirst({
+    where: { id: req.params.id, userId: user.id }
+  });
+  if (!realm) return res.status(404).json({ error: 'Realm not found' });
+
+  const dynasty = await prisma.dynasty.findFirst({
+    where: { realmId: realm.id },
+    include: {
+      heirs: {
+        orderBy: { createdAt: 'desc' }
+      },
+      reigns: {
+        orderBy: { startedAt: 'desc' },
+        take: 20
+      }
+    }
+  });
+
+  if (!dynasty) return res.json({ dynasty: null });
+
+  // Hide heir quality/stats for uncrowned heirs
+  const heirs = dynasty.heirs.map(heir => ({
+    ...heir,
+    quality: heir.isRevealed ? heir.quality : null,
+    hiddenStats: heir.isRevealed ? heir.hiddenStats : null
+  }));
+
+  return res.json({
+    dynasty: {
+      ...dynasty,
+      heirs
+    }
+  });
+});
+
+app.post('/heirs/:id/crown', async (req, res) => {
+  const user = res.locals.user as { id: string };
+  const heirId = req.params.id;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const heir = await tx.heir.findUnique({
+        where: { id: heirId },
+        include: { dynasty: { include: { realm: true } } }
+      });
+      if (!heir) throw new Error('Heir not found');
+      if (heir.isCrowned) throw new Error('Heir already crowned');
+      if (heir.dynasty.realm.userId !== user.id) throw new Error('Not your realm');
+
+      const realm = heir.dynasty.realm;
+      const hiddenStats = heir.hiddenStats as CardStats;
+
+      // Create a card template for the heir
+      const heirTemplateName = `Heir: ${heir.name}`;
+      const template = await tx.cardTemplate.create({
+        data: {
+          name: heirTemplateName,
+          type: 'King',
+          rarity: 'Common',
+          isLegendary: false,
+          benefitPillars: hiddenStats.benefitPillars,
+          downsidePillars: hiddenStats.downsidePillars,
+          pressures: hiddenStats.pressures ?? {},
+          termModifier: hiddenStats.termModifier,
+          flavorText: `${heir.name}, crowned heir of the ${heir.dynasty.name} dynasty.`
+        }
+      });
+
+      // Create card instance
+      const cardInstance = await tx.cardInstance.create({
+        data: {
+          templateId: template.id,
+          ownerUserId: user.id,
+          realmId: realm.id
+        }
+      });
+
+      // Install as King
+      const now = new Date();
+      const baseDays = 60 + hiddenStats.termModifier;
+      const realmWithSlots = await tx.realm.findUnique({
+        where: { id: realm.id },
+        include: realmInclude
+      });
+      if (!realmWithSlots) throw new Error('Realm not found');
+
+      const termEnd = computeTermEnd(now, baseDays, {
+        legitimacyScore: realm.legitimacyScore,
+        vacancyCount: realmWithSlots.institutionSlots.filter(s => !s.installedCardId).length,
+        isInterregnum: realm.isInterregnum
+      });
+
+      // Ensure King slot exists
+      await tx.institutionSlot.upsert({
+        where: { realmId_type: { realmId: realm.id, type: 'King' } },
+        update: {
+          installedCardId: cardInstance.id,
+          installedAt: now,
+          termEndsAt: termEnd,
+          consecutiveTerms: 0
+        },
+        create: {
+          realmId: realm.id,
+          type: 'King',
+          installedCardId: cardInstance.id,
+          installedAt: now,
+          termEndsAt: termEnd,
+          consecutiveTerms: 0
+        }
+      });
+
+      // Create Reign record
+      await tx.reign.create({
+        data: {
+          realmId: realm.id,
+          kingCardId: cardInstance.id,
+          startedAt: now,
+          endsAt: termEnd,
+          dynastyId: heir.dynastyId
+        }
+      });
+
+      // End interregnum if active
+      if (realm.isInterregnum) {
+        await tx.realm.update({
+          where: { id: realm.id },
+          data: { isInterregnum: false, interregnumStartedAt: null }
+        });
+        await tx.gameEventLog.create({
+          data: {
+            realmId: realm.id,
+            eventType: 'InterregnumEnded',
+            data: {},
+            occurredAt: now
+          }
+        });
+      }
+
+      // Mark heir as crowned and revealed
+      const updatedHeir = await tx.heir.update({
+        where: { id: heirId },
+        data: { isCrowned: true, isRevealed: true }
+      });
+
+      await tx.gameEventLog.create({
+        data: {
+          realmId: realm.id,
+          eventType: 'HeirCrowned',
+          data: {
+            heirId: heir.id,
+            heirName: heir.name,
+            quality: heir.quality,
+            dynastyId: heir.dynastyId
+          },
+          occurredAt: now
+        }
+      });
+
+      return {
+        heir: updatedHeir,
+        cardInstance,
+        quality: heir.quality,
+        hiddenStats
+      };
+    });
+
+    return res.json({
+      heir: result.heir,
+      quality: result.quality,
+      revealedStats: result.hiddenStats,
+      cardInstance: result.cardInstance
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(400).json({ error: message });
+  }
 });
 
 // --- Region endpoints ---
