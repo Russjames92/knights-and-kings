@@ -192,11 +192,62 @@ app.get('/realms/me', async (req, res) => {
   return res.json({ realms });
 });
 
+app.get('/realms/nearby', async (req, res) => {
+  const user = res.locals.user as { id: string };
+  const lat = parseFloat(req.query.lat as string);
+  const lng = parseFloat(req.query.lng as string);
+  const radiusKm = parseFloat(req.query.radiusKm as string) || 500;
+
+  if (isNaN(lat) || isNaN(lng)) {
+    return res.status(400).json({ error: 'lat and lng query params required' });
+  }
+
+  // Bounding box approximation: 1 degree latitude ≈ 111 km
+  const latDelta = radiusKm / 111;
+  const lngDelta = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+
+  const nearbyRealms = await prisma.realm.findMany({
+    where: {
+      userId: { not: user.id },
+      originLat: { gte: lat - latDelta, lte: lat + latDelta },
+      originLng: { gte: lng - lngDelta, lte: lng + lngDelta }
+    },
+    include: { user: { select: { displayName: true } } }
+  });
+
+  // Haversine filter for accurate distance
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const filtered = nearbyRealms.filter(r => {
+    const dLat = toRad(r.originLat - lat);
+    const dLng = toRad(r.originLng - lng);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat)) * Math.cos(toRad(r.originLat)) * Math.sin(dLng / 2) ** 2;
+    const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return distKm <= radiusKm;
+  });
+
+  const results = filtered.map(r => ({
+    id: r.id,
+    name: r.name,
+    originLat: r.originLat,
+    originLng: r.originLng,
+    legitimacyScore: r.legitimacyScore,
+    legitimacyTier: getLegitimacyTier(r.legitimacyScore),
+    ownerDisplayName: r.user?.displayName ?? 'Unknown'
+  }));
+
+  return res.json({ realms: results });
+});
+
 app.get('/realms/:id', async (req, res) => {
   const user = res.locals.user as { id: string };
   const realm = await prisma.realm.findFirst({
     where: { id: req.params.id, userId: user.id },
-    include: realmInclude
+    include: {
+      ...realmInclude,
+      user: { select: { displayName: true } }
+    }
   });
   if (!realm) return res.status(404).json({ error: 'Realm not found' });
 
@@ -204,7 +255,10 @@ app.get('/realms/:id', async (req, res) => {
   const tier = getLegitimacyTier(realm.legitimacyScore);
 
   return res.json({
-    realm,
+    realm: {
+      ...realm,
+      ownerDisplayName: realm.user?.displayName ?? 'Unknown'
+    },
     legitimacy: {
       score: realm.legitimacyScore,
       tier,

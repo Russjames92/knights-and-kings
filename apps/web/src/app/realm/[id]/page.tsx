@@ -5,12 +5,14 @@ import { useParams } from 'next/navigation';
 import {
   getRealm,
   getRealmEvents,
+  getNearbyRealms,
   establishInstitution,
   removeInstitution,
   reappointInstitution,
   initiateRaid
 } from '../../../lib/api';
-import type { Realm, LegitimacyInfo, GameEvent, InstitutionSlot } from '../../../lib/api';
+import type { Realm, LegitimacyInfo, GameEvent, InstitutionSlot, NearbyRealm } from '../../../lib/api';
+import RealmMap from '../../../components/RealmMap';
 
 const INSTITUTION_TYPES = ['King', 'Queen', 'Bishop', 'Knight', 'Rook', 'Pawn'] as const;
 
@@ -163,6 +165,7 @@ export default function RealmPage() {
   const [legitimacy, setLegitimacy] = useState<LegitimacyInfo | null>(null);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nearbyRealms, setNearbyRealms] = useState<NearbyRealm[]>([]);
   const [raidTarget, setRaidTarget] = useState('');
   const [raiding, setRaiding] = useState(false);
 
@@ -175,6 +178,14 @@ export default function RealmPage() {
       setRealm(realmData.realm);
       setLegitimacy(realmData.legitimacy);
       setEvents(eventData.events);
+
+      // Load nearby realms for the map
+      try {
+        const nearby = await getNearbyRealms(realmData.realm.originLat, realmData.realm.originLng);
+        setNearbyRealms(nearby.realms);
+      } catch {
+        // Non-critical, map works without nearby realms
+      }
     } catch {
       window.location.href = '/';
     } finally {
@@ -295,6 +306,9 @@ export default function RealmPage() {
       {/* Raid panel */}
       <div className="rounded-xl border border-yellow-900/40 bg-[#211808] p-6">
         <h2 className="mb-4 text-lg font-semibold text-yellow-500">Raid</h2>
+        <p className="mb-3 text-xs text-yellow-800">
+          Click a nearby realm on the map above to target, or enter a realm ID below.
+        </p>
         <div className="flex gap-3">
           <input
             type="text"
@@ -338,17 +352,21 @@ export default function RealmPage() {
         )}
       </div>
 
-      {/* Map placeholder */}
+      {/* Realm Map */}
       <div className="rounded-xl border border-yellow-900/40 bg-[#211808] p-6">
         <h2 className="mb-4 text-lg font-semibold text-yellow-500">Realm Map</h2>
-        <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-yellow-900/30 bg-[#1a1207]/50">
-          <div className="text-center">
-            <p className="text-yellow-700">Map Coming Soon</p>
-            <p className="mt-1 text-xs text-yellow-900">
-              Position: ({realm.originLat.toFixed(4)}, {realm.originLng.toFixed(4)})
-            </p>
-          </div>
-        </div>
+        <RealmMap
+          centerLat={realm.originLat}
+          centerLng={realm.originLng}
+          realmName={realm.name}
+          realmLegitimacyTier={legitimacy.tier}
+          nearbyRealms={nearbyRealms}
+          onRaidTarget={(targetId) => setRaidTarget(targetId)}
+          height="400px"
+        />
+        <p className="mt-2 text-xs text-yellow-800">
+          Position: ({realm.originLat.toFixed(4)}, {realm.originLng.toFixed(4)})
+        </p>
       </div>
     </div>
   );

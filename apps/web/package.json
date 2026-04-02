@@ -10,9 +10,12 @@
     "test": "echo 'no tests'"
   },
   "dependencies": {
+    "@types/leaflet": "^1.9.21",
+    "leaflet": "^1.9.4",
     "next": "^14.2.6",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-leaflet": "4"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
