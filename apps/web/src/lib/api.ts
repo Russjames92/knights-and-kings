@@ -112,6 +112,12 @@ export async function getRegions() {
   return apiFetch<{ regions: Region[] }>('/regions');
 }
 
+export async function getNearbyRealms(lat: number, lng: number, radiusKm = 500) {
+  return apiFetch<{ realms: NearbyRealm[] }>(
+    `/realms/nearby?lat=${lat}&lng=${lng}&radiusKm=${radiusKm}`
+  );
+}
+
 // Types
 export interface Realm {
   id: string;
@@ -136,6 +142,17 @@ export interface Realm {
   createdAt: string;
   updatedAt: string;
   institutionSlots?: InstitutionSlot[];
+  ownerDisplayName?: string;
+}
+
+export interface NearbyRealm {
+  id: string;
+  name: string;
+  originLat: number;
+  originLng: number;
+  legitimacyScore: number;
+  legitimacyTier: string;
+  ownerDisplayName: string;
 }
 
 export interface InstitutionSlot {

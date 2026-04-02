@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getMyRealms, createRealm, getRegions } from '../lib/api';
 import type { Realm, Region } from '../lib/api';
+import RealmMap from '../components/RealmMap';
 
 export default function DashboardPage() {
   const [realms, setRealms] = useState<Realm[]>([]);
@@ -12,6 +13,8 @@ export default function DashboardPage() {
   const [newName, setNewName] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('');
   const [creating, setCreating] = useState(false);
+  const [placementLat, setPlacementLat] = useState<number | null>(null);
+  const [placementLng, setPlacementLng] = useState<number | null>(null);
 
   useEffect(() => {
     const userId = localStorage.getItem('userId');
@@ -41,16 +44,22 @@ export default function DashboardPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim() || !selectedRegion) return;
+    if (placementLat === null || placementLng === null) {
+      alert('Click on the map to choose a location for your realm.');
+      return;
+    }
 
     setCreating(true);
     try {
       await createRealm({
         name: newName.trim(),
-        originLat: Math.random() * 180 - 90,
-        originLng: Math.random() * 360 - 180,
+        originLat: placementLat,
+        originLng: placementLng,
         regionId: selectedRegion
       });
       setNewName('');
+      setPlacementLat(null);
+      setPlacementLng(null);
       setShowCreate(false);
       await loadData();
     } catch (err) {
@@ -108,9 +117,29 @@ export default function DashboardPage() {
               ))}
             </select>
           </div>
+          <div>
+            <label className="mb-1 block text-sm text-yellow-600">Location (click the map)</label>
+            <RealmMap
+              centerLat={placementLat ?? 30}
+              centerLng={placementLng ?? 10}
+              placementMode={true}
+              placementLat={placementLat}
+              placementLng={placementLng}
+              onPlacement={(lat, lng) => {
+                setPlacementLat(lat);
+                setPlacementLng(lng);
+              }}
+              height="300px"
+            />
+            {placementLat !== null && placementLng !== null && (
+              <p className="mt-1 text-xs text-yellow-700">
+                Selected: ({placementLat.toFixed(2)}, {placementLng.toFixed(2)})
+              </p>
+            )}
+          </div>
           <button
             type="submit"
-            disabled={creating || !newName.trim()}
+            disabled={creating || !newName.trim() || placementLat === null}
             className="rounded-lg bg-yellow-700 px-6 py-2 font-semibold text-[#1a1207] hover:bg-yellow-600 disabled:opacity-50"
           >
             {creating ? 'Creating...' : 'Found Realm'}
