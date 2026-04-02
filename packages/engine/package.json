@@ -6,6 +6,9 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "echo 'no tests'"
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.2"
   }
 }

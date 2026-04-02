@@ -86,10 +86,9 @@ model CardInstance {
   templateId      String
   ownerUserId     String
   realmId         String?
-  installedSlotId String?      @unique
   template        CardTemplate @relation(fields: [templateId], references: [id])
   owner           User         @relation(fields: [ownerUserId], references: [id])
   realm           Realm?       @relation(fields: [realmId], references: [id])
-  installedSlot   InstitutionSlot? @relation("InstalledCard", fields: [installedSlotId], references: [id])
+  installedSlot   InstitutionSlot? @relation("InstalledCard")
   createdAt       DateTime     @default(now())
 }

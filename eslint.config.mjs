@@ -5,6 +5,11 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
     ignores: [
       '**/node_modules/**',
       '**/dist/**',

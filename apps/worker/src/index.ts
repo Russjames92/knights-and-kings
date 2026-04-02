@@ -1,10 +1,10 @@
 import { Queue, Worker } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
-import IORedis from 'ioredis';
+import { Redis } from 'ioredis';
 import { computeRealmTick, getTickWindow } from '@knights/engine';
 
 const prisma = new PrismaClient();
-const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 
 const queueName = 'realm-ticks';
 const tickQueue = new Queue(queueName, { connection });
@@ -28,7 +28,7 @@ async function processTicks() {
   let cursor: string | null = null;
 
   while (true) {
-    const realms = await prisma.realm.findMany({
+    const realms: Awaited<ReturnType<typeof prisma.realm.findMany>> = await prisma.realm.findMany({
       where: {
         OR: [{ lastTickAt: null }, { lastTickAt: { lt: tickTime } }]
       },

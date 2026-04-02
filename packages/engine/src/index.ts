@@ -9,7 +9,7 @@ export type RealmTickResult = {
   notes: string[];
 };
 
-export function computeRealmTick(input: RealmTickInput, now: Date): RealmTickResult {
+export function computeRealmTick(input: RealmTickInput, _now: Date): RealmTickResult {
   const notes: string[] = [];
   let nextWealth = input.wealth;
 

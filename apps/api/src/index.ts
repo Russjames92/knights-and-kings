@@ -152,7 +152,7 @@ app.post('/institutions/:type/install', async (req, res) => {
       }
 
       const cardInstance = await tx.cardInstance.findFirst({
-        where: { id: cardInstanceId, ownerUserId: user.id, installedSlotId: null },
+        where: { id: cardInstanceId, ownerUserId: user.id, installedSlot: null },
         include: { template: true }
       });
       if (!cardInstance) {
@@ -174,7 +174,7 @@ app.post('/institutions/:type/install', async (req, res) => {
 
       await tx.cardInstance.update({
         where: { id: cardInstance.id },
-        data: { realmId, installedSlotId: updatedSlot.id }
+        data: { realmId }
       });
 
       return { updatedRealm, updatedSlot };
